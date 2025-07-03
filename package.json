@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "node-apk-parser": "^0.2.3"
+  }
+}

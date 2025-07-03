@@ -1,0 +1,80 @@
+services:
+  android:
+    image: budtmo/docker-android:emulator_11.0
+    privileged: true
+    ports:
+      - 6080:6080
+      - 4723:4723
+    environment:
+      DEVICE: "Samsung Galaxy S10"
+      WEB_VNC: "true"
+      APPIUM: "true"
+    shm_size: 4g
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:6080" ]
+      interval: 5s
+      timeout: 60s
+      retries: 5
+
+  appium:
+    build:
+      context: ./backend/docker/appium
+      dockerfile: Dockerfile
+    privileged: true
+    restart: on-failure
+    ports:
+      - 4724:4723
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:4723/status" ]
+      interval: 10s
+      timeout: 30s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - ./backend/uploads:/opt/resources:rw
+    depends_on:
+      android:
+        condition: service_healthy
+
+  app:
+    build: ./backend/docker/test_runner
+    privileged: true
+    # Remove restart: on-failure for run-once containers
+    tty: true
+    profiles: ["test"] # Only start when explicitly needed
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      android:
+        condition: service_healthy
+      appium:
+        condition: service_healthy
+    volumes:
+       - ./backend/tests:/usr/src/app
+       - ./backend/uploads:/opt/resources:rw
+    
+volumes:
+  redis-data:
+  
