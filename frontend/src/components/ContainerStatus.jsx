@@ -203,9 +203,9 @@ const ContainerStatus = ({ onStatusChange }) => {
                 <button
                     onClick={ensureReady}
                     disabled={loading}
-                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
-                    {loading ? 'Processing...' : '🚀 Ensure Ready'}
+                    {loading ? 'Processing...' : 'Ensure Ready'}
                 </button>
                 <button
                     onClick={startContainers}

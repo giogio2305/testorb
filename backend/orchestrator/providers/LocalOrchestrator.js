@@ -3,11 +3,49 @@ const { BaseOrchestrator } = require('../orchestrator');
 const config = require('../../config/orchestrator.config');
 const path = require('path'); // Ensure path is required at the top
 const fs = require('fs'); // Using standard fs
+const SmartContainerManager = require('../../services/smartContainerManager');
 
 class LocalOrchestrator extends BaseOrchestrator {
     constructor() {
         super();
         this.docker = new Docker(config.local);
+        this.containerManager = new SmartContainerManager();
+    }
+
+    async startEmulator(applicationId) {
+        try {
+            console.log('🚀 Starting emulator with smart container management...');
+            
+            // Utiliser le gestionnaire intelligent
+            const result = await this.containerManager.smartStartServices(['android', 'appium', 'app']);
+            
+            console.log('📊 Smart start result:', {
+                servicesStarted: result.servicesStarted,
+                servicesRestarted: result.servicesRestarted,
+                totalTime: `${result.totalTime}ms`
+            });
+            
+            return {
+                success: true,
+                vncUrl: 'http://localhost:6080/?autoconnect=true',
+                noVncUrl: 'http://localhost:6080/?autoconnect=true',
+                appiumUrl: 'http://localhost:4723',
+                message: result.message,
+                optimizationStats: {
+                    servicesStarted: result.servicesStarted,
+                    servicesRestarted: result.servicesRestarted,
+                    totalTime: result.totalTime
+                }
+            };
+            
+        } catch (error) {
+            console.error('❌ Failed to start emulator services:', error);
+            return {
+                success: false,
+                message: 'Failed to start emulator services.',
+                error: error.message
+            };
+        }
     }
 
     async startEmulator(applicationId) {
@@ -182,27 +220,209 @@ class LocalOrchestrator extends BaseOrchestrator {
         throw new Error('noVNC port not available after waiting');
     }
 
-    async stopEmulator(applicationId) {
-        const containerName = `android_${applicationId}`;
-        const containers = await this.docker.listContainers({ all: true });
-        let emulatorContainer = containers.find(c =>
-            c.Names.some(name =>
-                name.includes('android') ||
-                name.includes('mobile-e2e-android-1') ||
-                name.includes(containerName)
-            )
-        );
-        if (emulatorContainer) {
-            const container = this.docker.getContainer(emulatorContainer.Id);
-            try {
-                await container.stop();
-                await container.remove({ force: true });
-                return { success: true, message: 'Emulator stopped and removed.' };
-            } catch (err) {
-                return { success: false, message: 'Failed to stop or remove emulator.', error: err.message };
+    async startEmulator(applicationId) {
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        try {
+            console.log('Checking current container status...');
+            
+            // Vérifier d'abord l'état des conteneurs (comme ensureServicesRunning)
+            const allRunning = await this.areAllServicesRunning();
+            
+            if (allRunning) {
+                console.log('All services are already running, checking health...');
+                
+                // Vérifier si les services sont en bonne santé
+                const allHealthy = await this.areAllServicesHealthy();
+                
+                if (allHealthy) {
+                    console.log('All services are already running and healthy!');
+                    return {
+                        success: true,
+                        vncUrl: 'http://localhost:6080/?autoconnect=true',
+                        noVncUrl: 'http://localhost:6080/?autoconnect=true',
+                        appiumUrl: 'http://localhost:4723',
+                        message: 'Services were already running and healthy'
+                    };
+                } else {
+                    console.log('Services are running but not healthy, waiting for health...');
+                    await this.waitForServicesHealthy();
+                    return {
+                        success: true,
+                        vncUrl: 'http://localhost:6080/?autoconnect=true',
+                        noVncUrl: 'http://localhost:6080/?autoconnect=true',
+                        appiumUrl: 'http://localhost:4723',
+                        message: 'Services were running, waited for health check'
+                    };
+                }
+            } else {
+                console.log('Not all services are running, starting missing services...');
+                
+                // Démarrer seulement les services manquants
+                await execAsync('docker-compose up -d android appium app', {
+                    cwd: require('path').resolve(__dirname, '../../../')
+                });
+                
+                // Attendre que les services soient prêts
+                console.log('Waiting for services to be healthy...');
+                await this.waitForServicesHealthy();
+                
+                return {
+                    success: true,
+                    vncUrl: 'http://localhost:6080/?autoconnect=true',
+                    noVncUrl: 'http://localhost:6080/?autoconnect=true',
+                    appiumUrl: 'http://localhost:4723',
+                    message: 'Services started successfully'
+                };
             }
-        } else {
-            return { success: false, message: 'Emulator container not found.' };
+            
+        } catch (error) {
+            console.error('Failed to start emulator services:', error);
+            return {
+                success: false,
+                message: 'Failed to start emulator services.',
+                error: error.message
+            };
+        }
+    }
+
+    // Ajouter les méthodes de vérification d'état (inspirées de ContainerManager)
+    async areAllServicesRunning() {
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        try {
+            const { stdout } = await execAsync('docker-compose ps --format json', {
+                cwd: require('path').resolve(__dirname, '../../../')
+            });
+            
+            const services = stdout.split('\n')
+                .filter(line => line.trim())
+                .map(line => {
+                    try { return JSON.parse(line); }
+                    catch { return null; }
+                })
+                .filter(service => service !== null);
+            
+            const requiredServices = ['android', 'appium', 'app'];
+            
+            return requiredServices.every(serviceName => {
+                const service = services.find(s => s.Service === serviceName);
+                return service && service.State === 'running';
+            });
+        } catch (error) {
+            console.error('Error checking service status:', error);
+            return false;
+        }
+    }
+
+    async areAllServicesHealthy() {
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        try {
+            const { stdout } = await execAsync('docker-compose ps --format json', {
+                cwd: require('path').resolve(__dirname, '../../../')
+            });
+            
+            const services = stdout.split('\n')
+                .filter(line => line.trim())
+                .map(line => {
+                    try { return JSON.parse(line); }
+                    catch { return null; }
+                })
+                .filter(service => service !== null);
+            
+            const android = services.find(s => s.Service === 'android');
+            const appium = services.find(s => s.Service === 'appium');
+            const app = services.find(s => s.Service === 'app');
+            
+            // Android et Appium doivent être healthy, App doit juste être running
+            const androidHealthy = android?.Health === 'healthy';
+            const appiumHealthy = appium?.Health === 'healthy';
+            const appRunning = app?.State === 'running';
+            
+            return androidHealthy && appiumHealthy && appRunning;
+        } catch (error) {
+            console.error('Error checking service health:', error);
+            return false;
+        }
+    }
+
+    // Méthode helper pour attendre que les services soient prêts
+    async waitForServicesHealthy(timeoutMs = 120000) {
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < timeoutMs) {
+            try {
+                const { stdout } = await execAsync('docker-compose ps --format json', {
+                    cwd: require('path').resolve(__dirname, '../../../')
+                });
+                
+                const services = stdout.split('\n')
+                    .filter(line => line.trim())
+                    .map(line => {
+                        try { return JSON.parse(line); }
+                        catch { return null; }
+                    })
+                    .filter(service => service !== null);
+                
+                const android = services.find(s => s.Service === 'android');
+                const appium = services.find(s => s.Service === 'appium');
+                
+                if (android?.Health === 'healthy' && appium?.Health === 'healthy') {
+                    console.log('All services are healthy!');
+                    return true;
+                }
+                
+                console.log('Waiting for services to be healthy...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+            } catch (error) {
+                console.log('Health check error, retrying...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
+        
+        throw new Error('Services failed to become healthy within timeout');
+    }
+
+    async stopEmulator(applicationId) {
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        try {
+            console.log('Stopping Docker Compose services...');
+            
+            // Utiliser la même commande que ContainerManager.stopServices()
+            const command = 'docker-compose stop android appium app';
+            
+            await execAsync(command, {
+                cwd: require('path').resolve(__dirname, '../../../')
+            });
+            
+            console.log('Docker Compose services stopped successfully');
+            return { 
+                success: true, 
+                message: 'Emulator services stopped successfully.' 
+            };
+            
+        } catch (error) {
+            console.error('Failed to stop Docker Compose services:', error);
+            return { 
+                success: false, 
+                message: 'Failed to stop emulator services.', 
+                error: error.message 
+            };
         }
     }
 

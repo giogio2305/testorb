@@ -59,27 +59,16 @@ export default function CreateTestWithAIModal({ isOpen, setIsOpen, onTestCreated
     setIsLoading(true);
     setError(null);
     try {
-        // TODO: API call to save the generatedTest (string) and testName to backend
-        // This would be similar to the upload modal's save logic, but with text content
-        console.log('Saving test:', { testName, script: generatedTest, applicationId });
-        // const response = await fetch('/api/tests', { // Or a more specific endpoint
-        // method: 'POST',
-        // headers: { 'Content-Type': 'application/json' },
-        // body: JSON.stringify({ name: testName, scriptContent: generatedTest, type: 'ai-generated', applicationId }),
-        // });
-        // if (!response.ok) {
-        //     const errData = await response.json();
-        //     throw new Error(errData.message || 'Failed to save test');
-        // }
-        // const savedTest = await response.json();
-        // onTestCreated(savedTest); // Callback to update parent component's state
-
-        // Simulate save
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        onTestCreated({ id: Date.now(), name: testName, type: 'ai-generated' }); // Simulate callback
+        const response = await axios.post(`/api/applications/${applicationId}/tests/text`, {
+            testName: testName,
+            scriptContent: generatedTest,
+            type: 'ai-generated'
+        });
+        
+        onTestCreated(response.data);
         closeModal();
     } catch (err) {
-        setError(err.message || 'Failed to save the test.');
+        setError(err.response?.data?.message || err.message || 'Failed to save the test.');
     } finally {
         setIsLoading(false);
     }

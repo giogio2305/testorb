@@ -9,43 +9,56 @@ services:
       DEVICE: "Samsung Galaxy S10"
       WEB_VNC: "true"
       APPIUM: "true"
-    shm_size: 4g
+      # Optimisations émulateur
+      EMULATOR_ARGS: "-no-audio -no-window -gpu swiftshader_indirect -no-snapshot -wipe-data -memory 4096 -cores 2"
+      ANDROID_ARCH: "x86_64"
+      API_LEVEL: "30"
+      TARGET: "google_apis"
+    shm_size: 6g  # Augmenté pour éviter les problèmes de mémoire partagée
     deploy:
       resources:
         limits:
-          memory: 6G
-          cpus: '2.0'
+          memory: 10G  # Augmenté pour plus de stabilité
+          cpus: '4.0'  # Plus de CPU pour l'émulateur
         reservations:
-          memory: 2G
-          cpus: '1.0'
+          memory: 4G   # Réservation plus importante
+          cpus: '2.0'
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:6080" ]
-      interval: 5s
-      timeout: 60s
-      retries: 5
+      interval: 10s  # Moins fréquent
+      timeout: 120s  # Plus de temps
+      retries: 10    # Plus de tentatives
+      start_period: 60s  # Plus de temps au démarrage
+    volumes:
+      - /dev/kvm:/dev/kvm  # Accélération matérielle si disponible
+    restart: unless-stopped  # Redémarrage automatique
 
   appium:
     build:
       context: ./backend/docker/appium
       dockerfile: Dockerfile
     privileged: true
-    restart: on-failure
+    restart: unless-stopped  # Changé de on-failure
     ports:
       - 4724:4723
+    environment:
+      # Optimisations Appium
+      APPIUM_LOG_LEVEL: "warn"  # Réduire les logs
+      RELAXED_SECURITY: "true"
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1.0'
+          memory: 2G  # Augmenté
+          cpus: '2.0'  # Plus de CPU
         reservations:
-          memory: 256M
-          cpus: '0.25'
+          memory: 512M
+          cpus: '0.5'
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:4723/status" ]
-      interval: 10s
-      timeout: 30s
-      retries: 10
-      start_period: 30s
+      interval: 15s  # Moins fréquent
+      timeout: 60s   # Plus de temps
+      retries: 15    # Plus de tentatives
+      start_period: 90s  # Plus de temps au démarrage
     volumes:
       - ./backend/uploads:/opt/resources:rw
     depends_on:
@@ -55,26 +68,36 @@ services:
   app:
     build: ./backend/docker/test_runner
     privileged: true
-    # Remove restart: on-failure for run-once containers
+    restart: unless-stopped  # Changement clé
     tty: true
-    profiles: ["test"] # Only start when explicitly needed
+    stdin_open: true
+    # Supprimer profiles: ["test"] pour démarrage automatique
+    environment:
+      - NODE_ENV=test
+      - APPIUM_HOST=appium
+      - ANDROID_HOST=android
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: '1.0'
+          memory: 3G  # Augmenté pour persistance
+          cpus: '2.0'
         reservations:
-          memory: 512M
-          cpus: '0.5'
+          memory: 1G
+          cpus: '1.0'
     depends_on:
       android:
         condition: service_healthy
       appium:
         condition: service_healthy
     volumes:
-       - ./backend/tests:/usr/src/app
-       - ./backend/uploads:/opt/resources:rw
-    
+      - ./backend/tests:/usr/src/app
+      - ./backend/uploads:/opt/resources:rw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: ["/bin/sh", "-c", "npm start"]
+
 volumes:
   redis-data:
-  

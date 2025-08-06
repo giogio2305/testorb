@@ -23,14 +23,26 @@ router.post('/start/:applicationId', async (req, res) => {
 router.delete('/stop/:applicationId', async (req, res) => {
     try {
         const { applicationId } = req.params;
+        console.log(`Attempting to stop emulator for application: ${applicationId}`);
+        
         const orchestrator = await createOrchestrator();
         const result = await orchestrator.stopEmulator(applicationId);
-        if (result.success) {
-            res.json({ success: true, message: result.message });
+        
+        console.log('Stop emulator result:', result);
+        
+        // Accepter success: false comme un résultat valide
+        if (result.success !== undefined) {
+            if (result.success) {
+                res.json({ success: true, message: result.message });
+            } else {
+                // Retourner 200 même si le conteneur n'est pas trouvé
+                res.json({ success: false, message: result.message, error: result.error });
+            }
         } else {
-            res.status(500).json({ success: false, message: result.message, error: result.error });
+            throw new Error('Invalid result from stopEmulator');
         }
     } catch (error) {
+        console.error('Error in stop emulator route:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

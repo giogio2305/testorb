@@ -1,0 +1,24 @@
+{
+    "name": "testorb",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "npx wdio run wdio.conf.js",
+        "start": "node test-server.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@wdio/cli": "^7.12.6",
+        "express": "^5.1.0",
+        "mockserver-client": "^5.11.2"
+    },
+    "devDependencies": {
+        "@wdio/local-runner": "^7.12.5",
+        "@wdio/mocha-framework": "^7.12.5",
+        "@wdio/selenium-standalone-service": "^7.12.5",
+        "@wdio/spec-reporter": "^7.12.5"
+    }
+}

@@ -6,13 +6,27 @@ const TestSchema = new mongoose.Schema({
     ref: 'Application',
     required: true
   },
-  fileName: {
+  name: {
     type: String,
     required: true
   },
+  fileName: {
+    type: String,
+    required: function() { return this.type === 'file'; }
+  },
   filePath: {
     type: String,
-    required: true
+    required: function() { return this.type === 'file'; }
+  },
+  scriptContent: {
+    type: String,
+    required: function() { return this.type === 'text'; }
+  },
+  type: {
+    type: String,
+    enum: ['file', 'text', 'ai-generated'],
+    required: true,
+    default: 'file'
   },
   uploadedAt: {
     type: Date,

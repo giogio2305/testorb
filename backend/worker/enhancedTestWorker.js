@@ -2,6 +2,7 @@ const { Worker } = require('bullmq');
 const { exec } = require('child_process');
 const path = require('path');
 const Docker = require('dockerode');
+const TestResult = require('../models/TestResult');
 
 // Determine the correct docker-compose command based on OS
 const dockerComposeCmd = process.platform === 'win32' ? 'docker-compose' : 'docker compose';
@@ -196,156 +197,314 @@ class EnhancedTestWorker {
     }
 
     async executeTest(job, applicationId, apkFileName, appPackageName) {
-        // Pre-test diagnostics
-        await this.performPreTestDiagnostics(job);
+        await job.updateProgress(10);
+        await job.log('Starting WebDriverIO test execution');
         
-        const command = `${dockerComposeCmd} run --rm -e APK_FILE_NAME=${apkFileName} -e APP_PACKAGE_NAME=${appPackageName || ''} ${TEST_RUNNER_SERVICE_NAME} npx wdio run wdio.conf.js`;
-        
-        await job.log(`Executing test command: ${command}`);
-        
-        return new Promise((resolve, reject) => {
-            const testProcess = exec(command, {
-                cwd: path.resolve(__dirname, '../../')
-            });
-
-            let outputBuffer = '';
-            let errorBuffer = '';
-            let currentProgress = 40;
-            let containerMonitor = null;
+        try {
+            // CORRECTION : Ajouter APPLICATION_ID pour filtrer les tests
+            const command = `${dockerComposeCmd} exec -T -e APK_FILE_NAME=${apkFileName} -e APP_PACKAGE_NAME=${appPackageName || ''} -e APPLICATION_ID=${applicationId} app npx wdio run wdio.conf.js`;
             
-            // Start container monitoring after a delay to allow container startup
-            setTimeout(async () => {
-                containerMonitor = await this.monitorContainerHealth('mobile-e2e-app-1', 10000);
-            }, 5000);
-
-            testProcess.stdout.on('data', async (data) => {
-                const output = data.toString();
-                outputBuffer += output;
-                console.log(`[EnhancedTestWorker][${applicationId}] stdout: ${output}`);
-                await job.log(`stdout: ${output.trim()}`);
+            console.log(`[EnhancedTestWorker] Executing command: ${command}`);
+            await job.updateProgress(20);
+            await job.log(`Executing command: ${command}`);
+            
+            return new Promise((resolve, reject) => {
+                const testProcess = exec(command, {
+                    cwd: path.resolve(__dirname, '../../')
+                });
                 
-                // Update progress based on output patterns
-                if (output.includes('Starting WebDriver session') && currentProgress < 60) {
-                    currentProgress = 60;
-                    await job.updateProgress(currentProgress);
-                    await job.log('WebDriver session started');
-                } else if (output.includes('Running tests') || output.includes('RUNNING in Android') && currentProgress < 75) {
-                    currentProgress = 75;
-                    await job.updateProgress(currentProgress);
-                    await job.log('Test execution in progress');
-                } else if (output.includes('Test execution') || output.includes('passing') && currentProgress < 90) {
-                    currentProgress = 90;
-                    await job.updateProgress(currentProgress);
-                    await job.log('Test execution completing');
-                }
+                let outputBuffer = '';
+                let errorBuffer = '';
                 
-                // Log important test milestones
-                if (output.includes('PASSED in Android')) {
-                    await job.log('✅ Test suite passed successfully');
-                } else if (output.includes('FAILED in Android')) {
-                    await job.log('❌ Test suite failed');
-                } else if (output.includes('passing')) {
-                    const passingMatch = output.match(/(\d+)\s+passing/);
-                    if (passingMatch) {
-                        await job.log(`✅ ${passingMatch[1]} test(s) passed`);
+                testProcess.stdout.on('data', async (data) => {
+                    const output = data.toString();
+                    outputBuffer += output;
+                    console.log(`[EnhancedTestWorker][${applicationId}] stdout: ${output}`);
+                    await job.log(`stdout: ${output.trim()}`);
+                    
+                    // Mise à jour de la progression basée sur les vrais patterns WebDriverIO
+                    if (output.includes('=== Préparation du test ===')) {
+                        await job.updateProgress(30);
+                    } else if (output.includes('=== Test prêt ===')) {
+                        await job.updateProgress(40);
+                    } else if (output.includes('=== Début du test')) {
+                        await job.updateProgress(60);
+                    } else if (output.includes('✓') && output.includes('trouvé avec:')) {
+                        await job.updateProgress(70);
+                    } else if (output.includes('Test "') && (output.includes('passed') || output.includes('failed'))) {
+                        await job.updateProgress(80);
+                    } else if (output.includes('=== Test') && output.includes('réussi ===')) {
+                        await job.updateProgress(90);
                     }
-                }
-            });
-
-            testProcess.stderr.on('data', async (data) => {
-                const error = data.toString();
-                errorBuffer += error;
-                console.error(`[EnhancedTestWorker][${applicationId}] stderr: ${error}`);
-                await job.log(`stderr: ${error.trim()}`);
-            });
-
-testProcess.on('close', async (code) => {
-                console.log(`[EnhancedTestWorker][${applicationId}] Process closed with exit code: ${code}`);
+                });
                 
-                // Stop container monitoring
-                if (containerMonitor) {
-                    clearInterval(containerMonitor);
-                }
+                testProcess.stderr.on('data', async (data) => {
+                    const error = data.toString();
+                    errorBuffer += error;
+                    console.error(`[EnhancedTestWorker][${applicationId}] stderr: ${error}`);
+                    await job.log(`stderr: ${error.trim()}`);
+                });
                 
-                // Check container status for additional context
-                const containerStatus = await this.checkContainerStatus('mobile-e2e-app-1');
-                console.log(`[EnhancedTestWorker][${applicationId}] Container status:`, containerStatus);
-                
-                if (code === 0) {
-                    console.log(`[EnhancedTestWorker][${applicationId}] Test execution completed successfully.`);
-                    resolve({ 
-                        success: true, 
-                        message: 'Tests completed successfully',
-                        output: outputBuffer,
-                        exitCode: code,
-                        containerStatus
-                    });
-                } else if (code === 137) {
-                    // Container was killed (SIGKILL) - check if test actually passed
-                    console.log(`[EnhancedTestWorker][${applicationId}] Container was killed (exit code 137)`);
-                    
-                    // Check if tests actually passed by examining output
-                    const testsPassed = outputBuffer.includes('passing') && !outputBuffer.includes('failing');
-                    const hasTestResults = outputBuffer.includes('spec') || outputBuffer.includes('test');
-                    
-                    if (testsPassed && hasTestResults) {
-                        console.log(`[EnhancedTestWorker][${applicationId}] Tests passed despite container termination - treating as success`);
+                testProcess.on('close', async (code) => {
+                    if (code === 0) {
+                        console.log(`[EnhancedTestWorker][${applicationId}] Test execution completed successfully.`);
+                        await job.updateProgress(100);
+                        await job.log('Test execution completed successfully');
+                        
+                        // Parse and save test results en arrière-plan (non-bloquant)
+                        this.parseAndSaveTestResults({
+                            output: outputBuffer,
+                            stdout: outputBuffer,
+                            stderr: errorBuffer
+                        }, applicationId, job.id).catch(error => {
+                            console.error('[EnhancedTestWorker] Error parsing results (non-blocking):', error);
+                        });
+                        
                         resolve({ 
                             success: true, 
-                            message: 'Tests completed successfully (container terminated after completion)',
+                            message: 'Tests completed successfully',
                             output: outputBuffer,
-                            exitCode: 0,
-                            containerStatus,
-                            originalExitCode: code
+                            exitCode: code
                         });
                     } else {
-                        const errorMsg = `Test execution failed - container killed (exit code ${code})`;
+                        const errorMsg = `Test execution failed with exit code ${code}`;
                         console.error(`[EnhancedTestWorker][${applicationId}] ${errorMsg}`);
-                        reject(new Error(`${errorMsg}. Output: ${outputBuffer}. Error: ${errorBuffer}`));
+                        await job.log(errorMsg);
+                        if (errorBuffer) {
+                            await job.log(`Error details: ${errorBuffer}`);
+                        }
+                        reject(new Error(`${errorMsg}. Error output: ${errorBuffer}`));
                     }
-                } else {
-                    // Check if tests actually passed despite non-zero exit code
-                    const testsPassed = this.checkTestSuccess(outputBuffer);
-                    
-                    if (testsPassed) {
-                        console.log(`[EnhancedTestWorker][${applicationId}] Tests passed despite exit code ${code} - treating as success`);
-                        await job.log(`Tests completed successfully despite exit code ${code}`);
-                        resolve({ 
-                            success: true, 
-                            message: `Tests completed successfully (exit code ${code} ignored due to successful test results)`,
-                            output: outputBuffer,
-                            exitCode: 0,
-                            containerStatus,
-                            originalExitCode: code
-                        });
-                        return;
-                    }
-                    
-                    // Enhanced error handling for exit code 1 (UiAutomator2 issues)
-                    if (code === 1) {
-                        await this.handleUiAutomator2Error(job, outputBuffer, errorBuffer, containerStatus);
-                    }
-                    
-                    const errorMsg = `Test execution failed with exit code ${code}`;
+                });
+                
+                testProcess.on('error', async (err) => {
+                    const errorMsg = `Failed to start test execution: ${err.message}`;
                     console.error(`[EnhancedTestWorker][${applicationId}] ${errorMsg}`);
-                    reject(new Error(`${errorMsg}. Output: ${outputBuffer}. Error: ${errorBuffer}`));
-                }
+                    await job.log(errorMsg);
+                    reject(err);
+                });
             });
-
-            testProcess.on('error', async (err) => {
-                // Stop container monitoring
-                if (containerMonitor) {
-                    clearInterval(containerMonitor);
+            
+        } catch (error) {
+            await job.log(`Error executing test: ${error.message}`);
+            throw error;
+        }
+    }
+    
+    async pollTestProgress(job, sessionId) {
+        const maxWaitTime = 300000;
+        const pollInterval = 5000;
+        let elapsed = 0;
+        
+        while (elapsed < maxWaitTime) {
+            try {
+                const response = await fetch(`http://mobile-e2e-app-1:3001/test-status/${sessionId}`);
+                const data = await response.json();
+                
+                // Dans la fonction pollTestProgress, ligne ~252
+                if (data.status === 'completed') {
+                    await job.log('Test execution completed, parsing results...');
+                    await parseAndSaveTestResults(data.results, applicationId, job.id); // Ajouter await ici
+                    clearInterval(pollInterval);
+                    resolve({
+                        success: true,
+                        message: 'Tests completed successfully',
+                        results: data.results
+                    });
+                } else if (data.status === 'running') {
+                    const progress = Math.min(90, 20 + (elapsed / maxWaitTime) * 70);
+                    await job.updateProgress(progress);
+                    await job.log(`Test in progress... (${Math.round(elapsed/1000)}s)`);
                 }
                 
-                const errorMsg = `Failed to start test process: ${err.message}`;
-                console.error(`[EnhancedTestWorker][${applicationId}] ${errorMsg}`);
-                await job.log(errorMsg);
-                reject(new Error(errorMsg));
-            });
-        });
+            } catch (error) {
+                await job.log(`Error polling test status: ${error.message}`);
+            }
+            
+            await this.sleep(pollInterval);
+            elapsed += pollInterval;
+        }
+        
+        throw new Error('Test execution timeout');
     }
+    
+    async parseAndSaveTestResults(testData, applicationId, jobId) {
+        try {
+            console.log('[EnhancedTestWorker] Starting parseAndSaveTestResults');
+            console.log('[EnhancedTestWorker] testData structure:', Object.keys(testData));
+            
+            // Accéder correctement à la sortie des tests
+            const output = testData.output || testData.stdout || '';
+            console.log('[EnhancedTestWorker] Test output length:', output.length);
+            
+            if (!output) {
+                console.log('[EnhancedTestWorker] No test output found');
+                return;
+            }
 
+            // Ligne 351 - Corriger l'appel à extractTestResults
+            const testResults = this.extractTestResults(output, applicationId, jobId);
+            
+            if (testResults.length === 0) {
+                console.log('[EnhancedTestWorker] No individual test results found');
+                return;
+            }
+
+            // Sauvegarder chaque résultat de test
+            for (const result of testResults) {
+                console.log('[EnhancedTestWorker] Saving test result:', result.testName);
+                await TestResult.create(result);
+            }
+
+            console.log(`[EnhancedTestWorker] Saved ${testResults.length} test results to database`);
+        } catch (error) {
+            console.error('[EnhancedTestWorker] Error in parseAndSaveTestResults:', error);
+        }
+    }
+    
+
+ extractTestResults(output, applicationId, jobId) {
+    const results = [];
+    const lines = output.split('\n');
+    
+    console.log('[EnhancedTestWorker] Analyzing test output for individual results');
+    console.log('[EnhancedTestWorker] Output sample:', output.substring(0, 500));
+    
+    for (const line of lines) {
+        // Pattern principal pour les tests avec retries comme objet
+        const testMatch = line.match(/Test \"(.+?)\" (passed|failed) in (\d+)ms \(retries: \[object Object\]\)/);
+        if (testMatch) {
+            const testResult = {
+                application: applicationId,
+                jobId: jobId,
+                testName: testMatch[1].trim(),
+                testFile: 'WebDriverIO Test',
+                status: testMatch[2],
+                duration: parseInt(testMatch[3]),
+                retries: 0, // Défaut car retries est un objet
+                error: {
+                    message: testMatch[2] === 'failed' ? 'Test failed - see logs for details' : null,
+                    stack: null
+                }
+            };
+            results.push(testResult);
+            console.log('[EnhancedTestWorker] Found test:', testResult.testName, 'Status:', testResult.status, 'Duration:', testResult.duration);
+            continue;
+        }
+        
+        // Pattern alternatif pour les tests avec retries numériques
+        const testMatchNumeric = line.match(/Test \"(.+?)\" (passed|failed) in (\d+)ms \(retries: (\d+)\)/);
+        if (testMatchNumeric) {
+            const testResult = {
+                application: applicationId,
+                jobId: jobId,
+                testName: testMatchNumeric[1].trim(),
+                testFile: 'WebDriverIO Test',
+                status: testMatchNumeric[2],
+                duration: parseInt(testMatchNumeric[3]),
+                retries: parseInt(testMatchNumeric[4]),
+                error: {
+                    message: testMatchNumeric[2] === 'failed' ? 'Test failed - see logs for details' : null,
+                    stack: null
+                }
+            };
+            results.push(testResult);
+            console.log('[EnhancedTestWorker] Found test (numeric retries):', testResult.testName, 'Status:', testResult.status);
+            continue;
+        }
+        
+        // Pattern pour les résumés WebDriverIO avec ✓
+        const wdioMatch = line.match(/^\s*✓\s+([a-zA-Z][\w\s-]{5,})\s*$/);
+        if (wdioMatch && wdioMatch[1].length > 5) {
+            const testResult = {
+                application: applicationId,
+                jobId: jobId,
+                testName: wdioMatch[1].trim(),
+                testFile: 'WebDriverIO Test',
+                status: 'passed',
+                duration: 0,
+                retries: 0,
+                error: {
+                    message: null,
+                    stack: null
+                }
+            };
+            results.push(testResult);
+            console.log('[EnhancedTestWorker] Found WDIO test:', testResult.testName);
+            continue;
+        }
+    }
+    
+    // Si aucun test individuel trouvé, analyser les résumés
+    if (results.length === 0) {
+        console.log('[EnhancedTestWorker] No individual tests found, analyzing summary');
+        
+        // Chercher des patterns de résumé
+        const summaryPassMatch = output.match(/(\d+)\s+passing/);
+        const summaryFailMatch = output.match(/(\d+)\s+failing/);
+        
+        if (summaryPassMatch || summaryFailMatch) {
+            const passedCount = summaryPassMatch ? parseInt(summaryPassMatch[1]) : 0;
+            const failedCount = summaryFailMatch ? parseInt(summaryFailMatch[1]) : 0;
+            
+            // Créer des résultats basés sur le résumé
+            for (let i = 0; i < passedCount; i++) {
+                results.push({
+                    application: applicationId,
+                    jobId: jobId,
+                    testName: `Test Case ${i + 1}`,
+                    testFile: 'WebDriverIO Suite',
+                    status: 'passed',
+                    duration: 0,
+                    retries: 0,
+                    error: {
+                        message: null,
+                        stack: null
+                    }
+                });
+            }
+            
+            for (let i = 0; i < failedCount; i++) {
+                results.push({
+                    application: applicationId,
+                    jobId: jobId,
+                    testName: `Failed Test ${i + 1}`,
+                    testFile: 'WebDriverIO Suite',
+                    status: 'failed',
+                    duration: 0,
+                    retries: 0,
+                    error: {
+                        message: 'Test failed - see logs for details',
+                        stack: null
+                    }
+                });
+            }
+        } else {
+            // Fallback
+            const hasErrors = output.toLowerCase().includes('error') || 
+                            output.toLowerCase().includes('failed') ||
+                            output.toLowerCase().includes('✗');
+            
+            results.push({
+                application: applicationId,
+                jobId: jobId,
+                testName: 'Test Execution Summary',
+                testFile: 'WebDriverIO',
+                status: hasErrors ? 'failed' : 'passed',
+                duration: 0,
+                retries: 0,
+                error: {
+                    message: hasErrors ? 'Errors detected in test output' : null,
+                    stack: null
+                }
+            });
+        }
+    }
+    
+    console.log(`[EnhancedTestWorker] Total results extracted: ${results.length}`);
+    return results;
+}
+    
     async checkContainerStatus(containerName) {
         try {
             const container = this.docker.getContainer(containerName);

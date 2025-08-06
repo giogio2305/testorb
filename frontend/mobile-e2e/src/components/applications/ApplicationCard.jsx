@@ -52,9 +52,13 @@ const ApplicationCard = ({ application }) => {
                     <button
                       className={`${
                         active ? 'bg-gray-100' : ''
-                      } block px-4 py-2 text-sm text-gray-700 w-full text-left`}
+                      } block px-4 py-2 text-sm text-red-700 w-full text-left hover:bg-red-50`}
+                      onClick={() => {
+                        // TODO: Implémenter la logique de suppression
+                        console.log('Delete project:', application._id);
+                      }}
                     >
-                      Run Tests
+                      Delete Project
                     </button>
                   )}
                 </Menu.Item>

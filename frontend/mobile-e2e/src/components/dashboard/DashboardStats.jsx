@@ -2,31 +2,30 @@ import React from 'react';
 import StatCard from './StatCard';
 import { AppWindowMac, ChartNoAxesCombined, FlaskConical, TabletSmartphone } from 'lucide-react';
 
-const DashboardStats = ({ tests }) => {
-  const runningTests = tests.filter(t => t.status === 'running').length;
-  const passedTests = tests.filter(t => t.status === 'passed').length;
-  const successRate = Math.round((passedTests / tests.length) * 100);
+const DashboardStats = ({ dashboardData }) => {
+  if (!dashboardData) return null;
 
   const stats = [
     {
       icon: <AppWindowMac className='size-6 stroke-emerald-500'/>,
       label: 'Applications',
-      value: 0
+      value: dashboardData.applications || 0
     },
     {
       icon: <FlaskConical className='size-6 stroke-emerald-500'/>,
-      label: 'Tests',
-      value: tests.length
+      label: 'Tests (30j)',
+      value: dashboardData.tests || 0
     },
     {
       icon: <TabletSmartphone className='size-6 stroke-emerald-500'/>,
-      label: 'Emulators',
-      value: runningTests
+      label: 'Durée Moy.',
+      value: Math.round((dashboardData.avgDuration || 0) / 1000),
+      unit: 's'
     },
     {
       icon: <ChartNoAxesCombined className='size-6 stroke-emerald-500'/>,
-      label: 'Success Rate',
-      value: successRate,
+      label: 'Taux Succès',
+      value: dashboardData.successRate || 0,
       unit: '%'
     }
   ];

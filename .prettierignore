@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Generated files
+*.min.js
+*.min.css
+
+# Logs
+*.log
+
+# Environment files
+.env*
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# Config files that should maintain specific formatting
+.gitignore
+.dockerignore
+
+# APK files
+*.apk
+*.idsig
+
+# Screenshots
+*.png
+*.jpg
+*.jpeg

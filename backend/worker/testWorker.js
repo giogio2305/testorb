@@ -3,6 +3,7 @@ const { Worker } = require('bullmq');
 const { exec } = require('child_process');
 const path = require('path');
 const ContainerManager = require('../services/containerManager');
+const TestResult = require('../models/TestResult');
 
 // Determine the correct docker-compose command based on OS
 // This is a simplified check; you might need a more robust solution for different environments
@@ -121,3 +122,49 @@ worker.on('completed', (job, result) => {
 worker.on('failed', (job, err) => {
   console.error(`[TestWorker] Job ${job.id} failed. Error:`, err.message);
 });
+
+// Dans la fonction de traitement des jobs
+const processTestJob = async (job) => {
+    const { applicationId, apkFileName, appPackageName } = job.data;
+    
+    try {
+        // ... existing test execution code ...
+        
+        // Parse test results from WebDriverIO output
+        const testResults = parseTestResults(stdout, applicationId, job.id);
+        
+        // Save results to database
+        for (const result of testResults) {
+            const testResult = new TestResult(result);
+            await testResult.save();
+        }
+        
+        return { success: true, results: testResults };
+    } catch (error) {
+        // ... error handling ...
+    }
+};
+
+// Function to parse WebDriverIO output and extract test results
+const parseTestResults = (output, applicationId, jobId) => {
+    const results = [];
+    const lines = output.split('\n');
+    
+    for (const line of lines) {
+        // Parse lines like: Test "Login Test" passed in 5000ms (retries: 0)
+        const testMatch = line.match(/Test "(.+?)" (passed|failed) in (\d+)ms \(retries: (\d+)\)/);
+        if (testMatch) {
+            results.push({
+                application: applicationId,
+                testName: testMatch[1],
+                testFile: 'extracted from logs',
+                status: testMatch[2],
+                duration: parseInt(testMatch[3]),
+                retries: parseInt(testMatch[4]),
+                jobId: jobId
+            });
+        }
+    }
+    
+    return results;
+};

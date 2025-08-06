@@ -29,9 +29,10 @@ const Navigation = () => {
       <NavLink to="/applications" icon={Smartphone}>
         Applications
       </NavLink>
-      <NavLink to="/results" icon={FileCheck2}>
+      {/* Supprimer ce lien car Results est spécifique à une application */}
+      {/* <NavLink to="/results" icon={FileCheck2}>
         Results
-      </NavLink>
+      </NavLink> */}
     </div>
   );
 };

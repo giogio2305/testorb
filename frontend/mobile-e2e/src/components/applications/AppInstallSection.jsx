@@ -9,7 +9,7 @@ export default function AppInstallSection({
 }) {
   if (isAppInstalled === true) {
     return (
-      <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">App Installed</span>
+      <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">App Installed</span>
     );
   }
   if (isAppInstalled === false) {
