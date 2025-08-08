@@ -21,7 +21,7 @@ import CreateTestModal from '../components/modals/CreateTestModal';
 import CreateTestWithAIModal from '../components/modals/CreateTestWithAIModal';
 import EditTestModal from '../components/modals/EditTestModal';
 import UploadTestModal from '../components/modals/UploadTestModal';
-import axios from '../config/axios'; // Ajouter cette ligne
+import axios from '../config/axios';
 import {
     useApplicationDetail,
     useApplicationTests,
@@ -31,6 +31,7 @@ import {
 import { useAppInstallStatus, useInstallApp } from '../hooks/useQueryEmulator';
 import { useCancelJob, useRunTests } from '../hooks/useQueryTests';
 import { useSmartEmulator } from '../hooks/useSmartEmulator';
+import { testService } from '../services/api'; // Ajouter cette ligne
 
 export default function ApplicationDetails() {
     const { id } = useParams();
@@ -173,24 +174,19 @@ export default function ApplicationDetails() {
         console.log('=== DIAGNOSTIC RUN SINGLE TEST ===');
         console.log('Test ID:', testId);
         console.log('Application._id:', application?._id);
-
+    
         if (!application?._id) {
             toast.error('Application non trouvée');
             return;
         }
-
+    
         try {
-            const requestData = {
-                applicationId: application._id,
-                tests: [testId], // Exécuter seulement ce test
-            };
-
-            console.log('Calling runTestsMutation for single test with:', requestData);
-            const result = await runTestsMutation.mutateAsync(requestData);
-
+            console.log('Calling runSingleTest for test:', testId);
+            const result = await testService.runSingleTest(application._id, testId);
+    
             if (result?.jobId) {
                 setCurrentJobId(result.jobId);
-                toast.success('Test lancé avec succès!');
+                toast.success(`Test "${result.testFile}" lancé avec succès!`);
             } else {
                 console.error('Aucun jobId retourné par le backend');
                 toast.error('Erreur lors du lancement du test');

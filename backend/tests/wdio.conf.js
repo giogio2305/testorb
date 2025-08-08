@@ -89,13 +89,13 @@ exports.config = {
             'appium:skipDeviceInitialization': false, // Changé pour plus de stabilité
             'appium:skipServerInstallation': false, // Changé pour éviter les problèmes
 
-            // Timeouts pour la stabilité
-            'appium:newCommandTimeout': 300, // 5 minutes
-            'appium:uiautomator2ServerInstallTimeout': 120000,
-            'appium:uiautomator2ServerLaunchTimeout': 120000,
-            'appium:uiautomator2ServerReadTimeout': 240000,
-            'appium:androidInstallTimeout': 120000,
-            'appium:adbExecTimeout': 90000,
+            // Timeouts optimisés pour une exécution rapide
+            'appium:newCommandTimeout': 120, // Réduit à 2 minutes
+            'appium:uiautomator2ServerInstallTimeout': 60000, // Réduit à 1 minute
+            'appium:uiautomator2ServerLaunchTimeout': 60000, // Réduit à 1 minute
+            'appium:uiautomator2ServerReadTimeout': 120000, // Réduit à 2 minutes
+            'appium:androidInstallTimeout': 60000, // Réduit à 1 minute
+            'appium:adbExecTimeout': 45000, // Réduit à 45 secondes
 
             // Port système fixe pour éviter les conflits
             'appium:systemPort': 8202, // Port fixe différent de 8201
@@ -110,8 +110,8 @@ exports.config = {
             'appium:recreateChromeDriverSessions': true,
             'appium:nativeWebScreenshot': true,
             'appium:enforceXPath1': true,
-            'appium:waitForIdleTimeout': 1000,
-            'appium:waitForSelectorTimeout': 30000,
+            'appium:waitForIdleTimeout': 500, // Réduit pour une exécution plus rapide
+            'appium:waitForSelectorTimeout': 10000, // Réduit de 30s à 10s pour les sélecteurs
             'appium:appPackage': process.env.APP_PACKAGE_NAME || 'com.vodqareactnative',
             'appium:appActivity': '.MainActivity', // Assurez-vous que c'est la bonne activité
         },
@@ -119,15 +119,15 @@ exports.config = {
 
     // Configuration globale optimisée
     logLevel: 'warn',
-    waitforTimeout: 30000,
-    connectionRetryTimeout: 180000,
-    connectionRetryCount: 5,
+    waitforTimeout: 15000, // Réduit de 30s à 15s pour une exécution plus rapide
+    connectionRetryTimeout: 120000, // Réduit de 180s à 120s
+    connectionRetryCount: 3, // Réduit de 5 à 3 tentatives
 
     // Mocha optimisé
     mochaOpts: {
         ui: 'bdd',
-        timeout: 180000, // 3 minutes par test
-        retries: 1, // 1 retry en cas d'échec
+        timeout: 120000, // 2 minutes par test (optimisé)
+        retries: 0, // Pas de retry pour une exécution plus rapide
     },
     //
     // ===================
@@ -166,14 +166,14 @@ exports.config = {
     baseUrl: 'http://localhost',
     //
     // Default timeout for all waitFor* commands.
-    waitforTimeout: 30000,
+    waitforTimeout: 15000, // Réduit pour une exécution plus rapide
     //
     // Default timeout in milliseconds for request
     // if browser driver or grid doesn't send response
-    connectionRetryTimeout: 180000,
+    connectionRetryTimeout: 120000, // Réduit de 180s à 120s
     //
     // Default request retries count
-    connectionRetryCount: 5,
+    connectionRetryCount: 3, // Réduit de 5 à 3 tentatives
     //
     // Test runner services
     // Services take over a specific job you don't want to take care of. They enhance
@@ -208,8 +208,8 @@ exports.config = {
     // See the full list at http://mochajs.org/
     mochaOpts: {
         ui: 'bdd',
-        timeout: 300000,
-        retries: 1,
+        timeout: 120000, // 2 minutes par test (optimisé)
+        retries: 0, // Pas de retry pour une exécution plus rapide
     },
     //
     // =====
@@ -275,8 +275,8 @@ exports.config = {
      */
     before: function (capabilities, specs) {
         console.log('Test session started successfully');
-        // Add global retry logic for UiAutomator2 issues
-        browser.addCommand('retryCommand', async function (command, maxRetries = 3) {
+        // Add global retry logic for UiAutomator2 issues (optimisé)
+        browser.addCommand('retryCommand', async function (command, maxRetries = 2) {
             let lastError;
             for (let i = 0; i < maxRetries; i++) {
                 try {
@@ -287,7 +287,7 @@ exports.config = {
                         `Command failed (attempt ${i + 1}/${maxRetries}): ${error.message}`
                     );
                     if (i < maxRetries - 1) {
-                        await browser.pause(2000); // Wait before retry
+                        await browser.pause(1000); // Réduit de 2s à 1s
                     }
                 }
             }

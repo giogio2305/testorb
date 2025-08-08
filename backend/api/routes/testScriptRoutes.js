@@ -49,17 +49,24 @@ router.post('/:applicationId/tests', upload.single('testScript'), async (req, re
   }
 });
 
-// DELETE /api/applications/:applicationId/tests/:testId - Delete a test script
+// DELETE /api/applications/:applicationId/tests/:testId - Delete a test
 router.delete('/:applicationId/tests/:testId', async (req, res) => {
   try {
     const test = await Test.findById(req.params.testId);
     if (!test) {
       return res.status(404).json({ message: 'Test not found' });
     }
-    fs.unlinkSync(test.filePath);
-    await test.remove();
+    
+    // Delete the file if it exists
+    if (test.filePath && fs.existsSync(test.filePath)) {
+      fs.unlinkSync(test.filePath);
+    }
+    
+    // Use deleteOne() instead of deprecated remove()
+    await Test.deleteOne({ _id: req.params.testId });
     res.json({ message: 'Test deleted' });
   } catch (error) {
+    console.error('Delete test error:', error);
     res.status(500).json({ message: 'Failed to delete test', error: error.message });
   }
 });

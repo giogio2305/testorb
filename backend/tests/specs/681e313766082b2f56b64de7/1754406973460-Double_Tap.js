@@ -157,8 +157,8 @@ describe('Double Tap', () => {
   });
 
   it('should perform double tap interaction', async () => {
+    // --- Step 1: Login to the application ---
     try {
-      // --- Step 1: Login to the application ---
       console.log('Attempting login with username "admin" and password "admin"');
 
       // Robust selector for Username field
@@ -235,112 +235,169 @@ describe('Double Tap', () => {
       expect(await doubleTapDemoTitle.isDisplayed()).toBe(true);
       console.log('Verified "Double Tap Demo" page is displayed.');
 
-      // --- Step 3: Perform Double Tap gesture ---
-      console.log('Preparing to perform double tap.');
+      // --- Step 3 & 4: Perform Double Tap gesture & verify/interact with modal (This part will be retried) ---
+      console.log('Preparing to perform double tap and verify modal with retry mechanism.');
+      const maxRetries = 3;
+      let attempt = 0;
+      let doubleTapAndModalSuccessful = false;
+      let lastError = null;
 
-      // Robust selector for "Double tap Me" button - Enhanced based on Login button strategy
-      const doubleTapMeButton = await getRobustElement([
-        // Most specific and reliable first
-        `android=new UiSelector().resourceId("${appPackage}:id/doubleTapMeBtn")`, // Specific Resource ID if available
-        `xpath://*[@resource-id="${appPackage}:id/doubleTapMeBtn"]`,             // XPath for Resource ID
-        `~doubleTapMe`,                                                           // Accessibility ID (common for React Native)
-        `xpath://*[@content-desc="doubleTapMe"]`,                                 // XPath for content-desc
-
-        // Then text-based selectors, considering various element types (Button, TextView, View)
-        `android=new UiSelector().text("Double Tap Me").className("android.widget.Button")`, // If it's explicitly a Button
-        `xpath://android.widget.Button[@text='Double Tap Me']`,                           // XPath for Button with exact text
-
-        `android=new UiSelector().text("Double Tap Me").clickable(true)`,          // Exact text, any clickable element
-        `xpath://*[@text='Double Tap Me' and @clickable='true']`,                  // XPath for exact text, clickable
-
-        `android=new UiSelector().textContains("Double Tap Me").clickable(true)`,  // Flexible textContains, any clickable element
-        `xpath://*[contains(@text, 'Double Tap Me') and @clickable='true']`,      // XPath for partial text, clickable
-
-        `android=new UiSelector().className("android.widget.TextView").text("Double Tap Me").clickable(true)`, // TextView acting as a button
-        `android=new UiSelector().className("android.view.View").text("Double Tap Me").clickable(true)`, // Generic View acting as a button
-        `android=new UiSelector().className("android.widget.TextView").textContains("Double Tap Me").clickable(true)`, // TextView with partial text
-        `android=new UiSelector().className("android.view.View").textContains("Double Tap Me").clickable(true)` // Generic View with partial text
-      ], 15000, 'Double Tap Me element not displayed or enabled after 15s.'); // Increased timeout and generalized message
-      expect(await doubleTapMeButton.isEnabled()).toBe(true); // Check if enabled
-      console.log('Verified "Double Tap Me" element is ready.');
-
-      // Perform the double tap action using W3C actions for more reliability
-      // Get the center coordinates of the button
-      const location = await doubleTapMeButton.getLocation();
-      const size = await doubleTapMeButton.getSize();
-      const x = location.x + size.width / 2;
-      const y = location.y + size.height / 2;
-
-      // MODIFICATION: Added explicit pointerMove actions before each pointerDown
-      // to ensure absolute coordinates are set for the pointer, addressing the "should be preceded..." error.
-      await driver.performActions([
-        {
-          type: 'pointer',
-          id: 'finger1',
-          parameters: { pointerType: 'touch' },
-          actions: [
-            { type: 'pointerMove', duration: 0, x: x, y: y }, // Set initial position for the first tap
-            { type: 'pointerDown' },
-            { type: 'pointerUp' },
-            { type: 'pause', duration: 100 }, // Short pause between taps (important for double tap)
-            { type: 'pointerMove', duration: 0, x: x, y: y }, // Re-set position for the second tap
-            { type: 'pointerDown' },
-            { type: 'pointerUp' },
-          ],
-        },
-      ]);
-      console.log('Performed double tap on "Double Tap Me" element using W3C Actions.');
-      await driver.pause(1000); // Small pause for modal to animate in
-
-      // --- Step 4: Verify and interact with the success modal ---
-      console.log('Checking for double tap success modal.');
-
-      // Robust selector for Modal Title "Double tap"
-      const modalTitle = await getRobustElement([
-        `android=new UiSelector().text("Double tap").className("android.widget.TextView")`,
-        `android=new UiSelector().resourceId("android:id/alertTitle")`, // Common Android AlertDialog title ID
-        `xpath://android.widget.TextView[@text='Double tap']`
-      ], 10000, 'Modal title "Double tap" not displayed after 10s.');
-      expect(await modalTitle.isDisplayed()).toBe(true);
-      console.log('Verified modal title "Double tap" is displayed.');
-
-      // Robust selector for Modal Content "Double tap successful!"
-      const modalContent = await getRobustElement([
-        `android=new UiSelector().text("Double tap successful!").className("android.widget.TextView")`,
-        `android=new UiSelector().resourceId("android:id/message")`, // Common Android AlertDialog message ID
-        `xpath://android.widget.TextView[@text='Double tap successful!']`
-      ], 10000, 'Modal content "Double tap successful!" not displayed after 10s.');
-      expect(await modalContent.isDisplayed()).toBe(true);
-      console.log('Verified modal content "Double tap successful!" is displayed.');
-
-      // Robust selector for "Ok" button in the modal
-      const okButton = await getRobustElement([
-        `android=new UiSelector().text("Ok").className("android.widget.Button")`,
-        `android=new UiSelector().resourceId("android:id/button1")`, // Common Android AlertDialog positive button ID
-        `xpath://android.widget.Button[@text='Ok']`
-      ], 10000, 'Modal "Ok" button not displayed or enabled after 10s.');
-      await okButton.click();
-      console.log('Clicked "Ok" button on the modal.');
-
-      // CRITICAL REQUIREMENT: Verify modal disappears after clicking Ok
-      await driver.waitUntil(async () => {
+      while (attempt < maxRetries && !doubleTapAndModalSuccessful) {
         try {
-          // Re-attempt to find the modal title; if it throws or returns not displayed, it means it's gone.
-          const modalTitleAfterClick = await $(`android=new UiSelector().text("Double tap")`);
-          return !(await modalTitleAfterClick.isDisplayed());
-        } catch (e) {
-          // If selector throws (element no longer exists in DOM), it means it's gone.
-          return true;
+          if (attempt > 0) {
+            console.log(`--- Starting retry attempt ${attempt + 1} of ${maxRetries} ---`);
+            // CRITICAL: Reset app state for retry
+            console.log('Resetting app state for retry...');
+            await driver.terminateApp(appPackage);
+            await driver.pause(1000);
+            await driver.activateApp(appPackage);
+            await driver.waitUntil(async () => {
+              try {
+                const activity = await driver.getCurrentActivity();
+                return activity && (activity.includes('MainActivity') || activity.includes('LoginActivity') || activity.includes('AuthActivity') || activity.includes('SplashActivity'));
+              } catch (e) {
+                return false;
+              }
+            }, { timeout: 30000, interval: 2000, timeoutMsg: 'Timed out waiting for app to reach initial activity after restart for retry.' });
+            console.log('App reactivated. Re-navigating to Double Tap Demo.');
+
+            // Re-login and re-navigate
+            await getRobustElement([`android=new UiSelector().resourceId("${appPackage}:id/username")`, `xpath://android.widget.EditText[@text='Username']`], 15000, 'Username field for retry not found.').setValue('admin');
+            await getRobustElement([`android=new UiSelector().resourceId("${appPackage}:id/password")`, `xpath://android.widget.EditText[@text='Password']`], 10000, 'Password field for retry not found.').setValue('admin');
+            await getRobustElement([`android=new UiSelector().resourceId("${appPackage}:id/login")`, `xpath://*[@resource-id="${appPackage}:id/login"]`], 15000, 'Login button for retry not found.').click();
+            await getRobustElement([`android=new UiSelector().text("Samples List")`, `xpath://android.widget.TextView[@text='Samples List']`], 15000, 'Samples List title for retry not found.'); // Verify Samples List
+            await getRobustElement([`android=new UiSelector().text("Double Tap")`, `xpath://android.widget.TextView[@text='Double Tap']`], 15000, 'Double Tap list item for retry not found.').click();
+            await getRobustElement([`android=new UiSelector().text("Double Tap Demo")`, `xpath://android.widget.TextView[@text='Double Tap Demo']`], 10000, 'Double Tap Demo title for retry not found.'); // Verify Double Tap Demo page
+            console.log('Re-navigation complete.');
+          }
+
+          // --- Execute double tap and modal verification ---
+          const doubleTapMeButton = await getRobustElement([
+            `android=new UiSelector().resourceId("${appPackage}:id/doubleTapMeBtn")`,
+            `xpath://*[@resource-id="${appPackage}:id/doubleTapMeBtn"]`,
+            `~doubleTapMe`,
+            `xpath://*[@content-desc="doubleTapMe"]`,
+
+            `android=new UiSelector().text("Double Tap Me").className("android.widget.Button")`,
+            `xpath://android.widget.Button[@text='Double Tap Me']`,
+
+            `android=new UiSelector().text("Double Tap Me").clickable(true)`,
+            `xpath://*[@text='Double Tap Me' and @clickable='true']`,
+
+            `android=new UiSelector().textContains("Double Tap Me").clickable(true)`,
+            `xpath://*[contains(@text, 'Double Tap Me') and @clickable='true']`,
+
+            `android=new UiSelector().className("android.widget.TextView").text("Double Tap Me").clickable(true)`,
+            `android=new UiSelector().className("android.view.View").text("Double Tap Me").clickable(true)`,
+            `android=new UiSelector().className("android.widget.TextView").textContains("Double Tap Me").clickable(true)`,
+            `android=new UiSelector().className("android.view.View").textContains("Double Tap Me").clickable(true)`
+          ], 15000, 'Double Tap Me element not displayed or enabled after 15s.');
+          expect(await doubleTapMeButton.isEnabled()).toBe(true);
+          console.log('Verified "Double Tap Me" element is ready.');
+
+          const location = await doubleTapMeButton.getLocation();
+          const size = await doubleTapMeButton.getSize();
+          const x = location.x + size.width / 2;
+          const y = location.y + size.height / 2;
+
+          await driver.performActions([
+            {
+              type: 'pointer',
+              id: 'finger1',
+              parameters: { pointerType: 'touch' },
+              actions: [
+                { type: 'pointerMove', duration: 0, x: x, y: y },
+                { type: 'pointerDown' },
+                { type: 'pointerUp' },
+                { type: 'pause', duration: 100 },
+                { type: 'pointerMove', duration: 0, x: x, y: y },
+                { type: 'pointerDown' },
+                { type: 'pointerUp' },
+              ],
+            },
+          ]);
+          console.log('Performed double tap on "Double Tap Me" element using W3C Actions.');
+          await driver.pause(1000); // Small pause for modal to animate in
+
+          // Robust selector for Modal Title "Double tap" - Enhanced selectors and increased timeout
+          const modalTitle = await getRobustElement([
+            `android=new UiSelector().resourceId("android:id/alertTitle")`,
+            `android=new UiSelector().text("Double tap").className("android.widget.TextView")`,
+            `xpath://android.widget.TextView[@text='Double tap']`,
+            `~Double tap`,
+            `xpath://*[@content-desc="Double tap"]`,
+            `android=new UiSelector().textContains("Double tap")`,
+            `xpath://*[contains(@text, 'Double tap')]`,
+          ], 15000, 'Modal title "Double tap" not displayed after 15s.');
+          expect(await modalTitle.isDisplayed()).toBe(true);
+          console.log('Verified modal title "Double tap" is displayed.');
+
+          // Robust selector for Modal Content "Double tap successful!" - Enhanced selectors and increased timeout
+          const modalContent = await getRobustElement([
+            `android=new UiSelector().resourceId("android:id/message")`,
+            `android=new UiSelector().text("Double tap successful!").className("android.widget.TextView")`,
+            `xpath://android.widget.TextView[@text='Double tap successful!']`,
+            `~Double tap successful!`,
+            `xpath://*[@content-desc="Double tap successful!"]`,
+            `android=new UiSelector().textContains("Double tap successful!")`,
+            `xpath://*[contains(@text, 'Double tap successful!')]`,
+          ], 15000, 'Modal content "Double tap successful!" not displayed after 15s.');
+          expect(await modalContent.isDisplayed()).toBe(true);
+          console.log('Verified modal content "Double tap successful!" is displayed.');
+
+          // Robust selector for "Ok" button in the modal
+          const okButton = await getRobustElement([
+            `android=new UiSelector().resourceId("android:id/button1")`,
+            `android=new UiSelector().text("Ok").className("android.widget.Button")`,
+            `xpath://android.widget.Button[@text='Ok']`,
+            `~Ok`,
+            `xpath://*[@content-desc="Ok"]`,
+            `android=new UiSelector().textContains("Ok").clickable(true)`
+          ], 10000, 'Modal "Ok" button not displayed or enabled after 10s.');
+          await okButton.click();
+          console.log('Clicked "Ok" button on the modal.');
+
+          // CRITICAL REQUIREMENT: Verify modal disappears after clicking Ok
+          await driver.waitUntil(async () => {
+            try {
+              const modalTitleAfterClick = await $(`android=new UiSelector().text("Double tap")`);
+              return !(await modalTitleAfterClick.isDisplayed());
+            } catch (e) {
+              return true; // If selector throws (element no longer exists in DOM), it means it's gone.
+            }
+          }, { timeout: 5000, timeoutMsg: 'Modal did not disappear after clicking Ok.' });
+          console.log('Verified modal disappeared successfully.');
+
+          doubleTapAndModalSuccessful = true; // Mark success for this iteration
+
+        } catch (error) {
+          lastError = error;
+          attempt++;
+          console.error(`Double Tap and Modal verification failed on attempt ${attempt}: ${error.message}`);
+          await driver.saveScreenshot(`./screenshots/double-tap-modal-failure-attempt-${attempt}.png`);
+          console.log(`Captured screenshot for attempt ${attempt}.`);
+
+          if (attempt < maxRetries) {
+            await driver.pause(2000); // Mandatory pause before next retry
+            console.log(`Pausing for 2 seconds before retry attempt ${attempt + 1}.`);
+          }
         }
-      }, { timeout: 5000, timeoutMsg: 'Modal did not disappear after clicking Ok.' });
-      console.log('Verified modal disappeared successfully.');
+      }
+
+      if (!doubleTapAndModalSuccessful) {
+        console.error(`Test "Double Tap" failed after ${maxRetries} attempts.`);
+        throw lastError; // Re-throw the last error if all retries failed
+      }
 
       console.log('Test "Double Tap" completed successfully!');
 
     } catch (error) {
       console.error('Test "Double Tap" failed:', error.message);
-      // CRITICAL REQUIREMENT: Capture screenshot on failure
-      await driver.saveScreenshot('./screenshots/double-tap-failure.png');
+      // If the error occurred before the retry block, or the retry block failed, capture one final screenshot
+      // This condition avoids double-screenshot if the retry block already took one and re-threw.
+      if (!error.message.includes('after all retries')) {
+         await driver.saveScreenshot('./screenshots/double-tap-final-failure.png');
+      }
       throw error; // Re-throw the error to fail the test in the test runner
     }
   });

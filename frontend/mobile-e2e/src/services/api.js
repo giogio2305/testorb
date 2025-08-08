@@ -43,6 +43,10 @@ export const testService = {
         axios
             .post(`/api/applications/${data.applicationId}/run-tests`, data)
             .then((res) => res.data),
+    runSingleTest: (applicationId, testId) =>
+        axios
+            .post(`/api/applications/${applicationId}/run-single-test`, { testId })
+            .then((res) => res.data),
     getJobStatus: (jobId) => axios.get(`/api/jobs/${jobId}/status`).then((res) => res.data),
     cancelJob: (jobId) => axios.delete(`/api/jobs/${jobId}`).then((res) => res.data),
 };

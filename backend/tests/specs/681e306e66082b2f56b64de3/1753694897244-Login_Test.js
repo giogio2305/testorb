@@ -163,17 +163,17 @@ describe('Login Test', () => {
                 throw new Error('Champ username introuvable avec tous les sélecteurs');
             }
 
-            // Saisie avec retry
-            for (let i = 0; i < 3; i++) {
+            // Saisie avec retry optimisé
+            for (let i = 0; i < 2; i++) {
                 try {
                     await usernameField.clearValue();
                     await usernameField.setValue('admin');
                     console.log("✓ Nom d'utilisateur saisi");
                     break;
                 } catch (e) {
-                    if (i === 2) throw e;
-                    console.log(`Retry saisie username ${i + 1}/3`);
-                    await driver.pause(2000);
+                    if (i === 1) throw e;
+                    console.log(`Retry saisie username ${i + 1}/2`);
+                    await driver.pause(1000); // Réduit de 2s à 1s
                 }
             }
 
@@ -212,17 +212,17 @@ describe('Login Test', () => {
                 throw new Error('Champ password introuvable avec tous les sélecteurs');
             }
 
-            // Saisie avec retry
-            for (let i = 0; i < 3; i++) {
+            // Saisie avec retry optimisé
+            for (let i = 0; i < 2; i++) {
                 try {
                     await passwordField.clearValue();
                     await passwordField.setValue('admin');
                     console.log('✓ Mot de passe saisi');
                     break;
                 } catch (e) {
-                    if (i === 2) throw e;
-                    console.log(`Retry saisie password ${i + 1}/3`);
-                    await driver.pause(2000);
+                    if (i === 1) throw e;
+                    console.log(`Retry saisie password ${i + 1}/2`);
+                    await driver.pause(1000); // Réduit de 2s à 1s
                 }
             }
 
@@ -262,16 +262,16 @@ describe('Login Test', () => {
                 throw new Error('Bouton login introuvable avec tous les sélecteurs');
             }
 
-            // Clic avec retry
-            for (let i = 0; i < 3; i++) {
+            // Clic avec retry optimisé
+            for (let i = 0; i < 2; i++) {
                 try {
                     await loginButton.click();
                     console.log('✓ Bouton de connexion cliqué');
                     break;
                 } catch (e) {
-                    if (i === 2) throw e;
-                    console.log(`Retry clic login ${i + 1}/3`);
-                    await driver.pause(2000);
+                    if (i === 1) throw e;
+                    console.log(`Retry clic login ${i + 1}/2`);
+                    await driver.pause(1000); // Réduit de 2s à 1s
                 }
             }
 
